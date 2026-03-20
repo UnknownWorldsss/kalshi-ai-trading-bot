@@ -72,12 +72,24 @@ async def scan_and_log():
     try:
         logger.info("Fetching markets from database...")
         
-        # Get markets we've already logged signals for (in last 24 hours)
+        # Get markets we've already logged signals for
+        # - Skip ALL pending signals (regardless of age)
+        # - Skip settled signals from last 24 hours (to avoid re-logging)
         from src.paper.tracker import get_pending_signals, get_all_signals
+        
+        pending_signals = get_pending_signals()
         all_signals = get_all_signals()
+        
+        # Always skip pending markets
+        pending_markets = {s['market_id'] for s in pending_signals}
+        
+        # Also skip recently logged settled markets (24h)
         now = datetime.now(timezone.utc)
         recently_logged = set()
         for s in all_signals:
+            # Skip if pending (already counted) or no outcome yet
+            if s.get('outcome') == 'pending' or not s.get('outcome'):
+                continue
             ts = s.get('timestamp')
             if ts:
                 try:
@@ -86,10 +98,17 @@ async def scan_and_log():
                     if hours_ago < 24:  # Less than 24 hours ago
                         recently_logged.add(s['market_id'])
                 except:
-                    pass  # Skip if timestamp parsing fails
+                    pass
+        
+        # Combine both sets
+        markets_to_skip = pending_markets | recently_logged
+        
+        if pending_markets:
+            logger.info(f"Skipping {len(pending_markets)} markets with pending signals")
         if recently_logged:
-            logger.info(f"Skipping {len(recently_logged)} markets already logged in last 24h")
-            for mid in list(recently_logged)[:5]:  # Show first 5
+            logger.info(f"Skipping {len(recently_logged)} recently settled markets (24h)")
+        if markets_to_skip:
+            for mid in list(markets_to_skip)[:5]:
                 logger.info(f"  - {mid[:60]}...")
         
         # Get eligible markets from DB
@@ -98,10 +117,11 @@ async def scan_and_log():
             max_days_to_expiry=30  # Look at markets expiring within 30 days
         )
         
-        # Filter out recently logged markets
-        markets = [m for m in all_markets if m.market_id not in recently_logged]
+        # Filter out markets to skip
+        markets = [m for m in all_markets if m.market_id not in markets_to_skip]
         
-        logger.info(f"Fetched {len(markets)} markets from database ({len(all_markets) - len(markets)} skipped)")
+        total_skipped = len(all_markets) - len(markets)
+        logger.info(f"Fetched {len(markets)} markets from database ({total_skipped} skipped)")
         
         if not markets:
             logger.info("No new markets to analyze.")
