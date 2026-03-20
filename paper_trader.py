@@ -75,12 +75,22 @@ async def scan_and_log():
         # Get markets we've already logged signals for (in last 24 hours)
         from src.paper.tracker import get_pending_signals, get_all_signals
         all_signals = get_all_signals()
-        recently_logged = {
-            s['market_id'] for s in all_signals 
-            if s.get('timestamp') and (datetime.now(timezone.utc) - datetime.fromisoformat(s['timestamp'].replace('Z', '+00:00'))).days < 1
-        }
+        now = datetime.now(timezone.utc)
+        recently_logged = set()
+        for s in all_signals:
+            ts = s.get('timestamp')
+            if ts:
+                try:
+                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    hours_ago = (now - dt).total_seconds() / 3600
+                    if hours_ago < 24:  # Less than 24 hours ago
+                        recently_logged.add(s['market_id'])
+                except:
+                    pass  # Skip if timestamp parsing fails
         if recently_logged:
             logger.info(f"Skipping {len(recently_logged)} markets already logged in last 24h")
+            for mid in list(recently_logged)[:5]:  # Show first 5
+                logger.info(f"  - {mid[:60]}...")
         
         # Get eligible markets from DB
         all_markets = await db.get_eligible_markets(
