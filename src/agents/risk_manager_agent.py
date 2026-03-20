@@ -15,7 +15,7 @@ class RiskManagerAgent(BaseAgent):
 
     AGENT_NAME = "risk_manager"
     AGENT_ROLE = "risk_manager"
-    DEFAULT_MODEL = "deepseek/deepseek-v3.2"
+    DEFAULT_MODEL = "openai/gpt-4o-mini"
 
     SYSTEM_PROMPT = (
         "You are a quantitative risk manager for a prediction-market trading "
