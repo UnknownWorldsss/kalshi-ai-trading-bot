@@ -34,6 +34,7 @@ from src.utils.prompts import SIMPLIFIED_PROMPT_TPL
 
 
 @dataclass
+@dataclass
 class TradingDecision:
     """Represents an AI trading decision."""
     action: str  # "buy", "sell", "hold"

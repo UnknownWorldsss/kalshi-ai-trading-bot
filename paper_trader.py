@@ -121,10 +121,12 @@ async def scan_and_log():
             side = decision.side if hasattr(decision, 'side') else decision.get("side", "NO")
             confidence = decision.confidence if hasattr(decision, 'confidence') else decision.get("confidence", 0)
             limit_price = decision.limit_price if hasattr(decision, 'limit_price') else decision.get("limit_price", market.no_price)
-            reasoning = decision.rationale if hasattr(decision, 'rationale') else decision.get("reasoning", "")
+            reasoning = decision.reasoning if hasattr(decision, 'reasoning') else decision.get("reasoning", "")
+            strategy = getattr(decision, 'strategy', None) or decision.get("strategy", "directional") if hasattr(decision, 'get') else "directional"
 
             # Only log signals with meaningful confidence edge
             if confidence < 0.55:
+                logger.info(f"  -> Skipped (confidence {confidence:.2f} < 0.55)")
                 continue
 
             signal_id = log_signal(
@@ -134,7 +136,7 @@ async def scan_and_log():
                 entry_price=limit_price,
                 confidence=confidence,
                 reasoning=reasoning,
-                strategy=decision.get("strategy", "directional"),
+                strategy=strategy,
             )
             signals_logged += 1
             logger.info(

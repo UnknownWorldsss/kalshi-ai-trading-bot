@@ -141,7 +141,7 @@ class TradingConfig:
     daily_ai_budget: float = 50.0  # INCREASED: Much higher daily budget for testing (was 10.0)
     max_ai_cost_per_decision: float = 0.08  # INCREASED: Higher per-decision cost (was 0.05, now 0.08)
     analysis_cooldown_hours: int = 0  # DISABLED: No cooldown for testing (was 3)
-    max_analyses_per_market_per_day: int = 4  # INCREASED: More analyses per day (was 2, now 4)
+    max_analyses_per_market_per_day: int = 100  # INCREASED: Much higher for paper trading testing
     
     # Daily AI spending limits - SAFETY CONTROLS
     daily_ai_cost_limit: float = 50.0  # Maximum daily spending on AI API calls (USD)
