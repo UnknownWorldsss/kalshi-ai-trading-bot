@@ -34,7 +34,7 @@ class EnsembleConfig:
         "anthropic/claude-3.5-sonnet": {"provider": "openrouter", "role": "news_analyst", "weight": 0.20},
         "openai/gpt-4o": {"provider": "openrouter", "role": "bull_researcher", "weight": 0.20},
         "google/gemini-3-flash-preview": {"provider": "openrouter", "role": "bear_researcher", "weight": 0.15},
-        "deepseek/deepseek-r1": {"provider": "openrouter", "role": "risk_manager", "weight": 0.15},
+        "openai/gpt-4o-mini": {"provider": "openrouter", "role": "risk_manager", "weight": 0.15},
     })
     min_models_for_consensus: int = 3
     disagreement_threshold: float = 0.25  # Std dev above this = low confidence
@@ -42,7 +42,7 @@ class EnsembleConfig:
     debate_enabled: bool = True
     calibration_tracking: bool = True
     max_ensemble_cost: float = 0.50  # Max cost per ensemble decision
-    fast_mode: bool = False  # If True, use parallel Bull/Bear for ~30% speedup
+    fast_mode: bool = True  # If True, use parallel Bull/Bear for ~5x speedup
 
 
 @dataclass

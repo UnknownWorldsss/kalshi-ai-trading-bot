@@ -68,24 +68,20 @@ async def _run_ensemble_decision(
     """
     Run the multi-agent ensemble decision pipeline.
     Returns a dict with action, side, confidence, limit_price, reasoning or None.
-    
-    Args:
-        fast_mode: If True, use FastDebateRunner with parallel Bull/Bear steps
-                   for ~30-40% speed improvement (slightly lower quality).
     """
     logger = get_trading_logger("ensemble_decision")
     try:
-        # Use fast debate runner if enabled in settings or fast_mode=True
-        use_fast = fast_mode or getattr(settings.ensemble, 'fast_mode', False)
+        # Toggle between fast (parallel) and standard (sequential) modes
+        # Fast mode: ~5x faster, slightly lower debate quality
+        # Standard mode: slower, maximum debate quality
+        use_fast_mode = getattr(settings.ensemble, 'fast_mode', True)
         
-        if use_fast:
+        if use_fast_mode:
             from src.agents.debate_fast import FastDebateRunner
             runner = FastDebateRunner()
             logger.info("Using FastDebateRunner (parallel Bull/Bear)")
         else:
             from src.agents.debate import DebateRunner
-            runner = DebateRunner()
-            logger.info("Using standard DebateRunner (sequential)")
         
         from src.agents.ensemble import EnsembleRunner
 
