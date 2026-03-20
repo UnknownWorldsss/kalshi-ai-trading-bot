@@ -15,9 +15,18 @@ import os
 import re
 from json_repair import repair_json
 
-from xai_sdk import AsyncClient
-from xai_sdk.chat import user as xai_user
-from xai_sdk.search import SearchParameters
+# Try to import xAI SDK, but don't fail if it's not available
+try:
+    from xai_sdk import AsyncClient
+    from xai_sdk.chat import user as xai_user
+    from xai_sdk.search import SearchParameters
+    XAI_SDK_AVAILABLE = True
+except ImportError:
+    XAI_SDK_AVAILABLE = False
+    xai_user = None
+
+# Import OpenAI for OpenRouter fallback
+from openai import AsyncOpenAI
 
 from src.config.settings import settings
 from src.utils.logging_setup import TradingLoggerMixin, log_error_with_context
@@ -31,6 +40,7 @@ class TradingDecision:
     side: str    # "yes", "no"
     confidence: float  # 0.0 to 1.0
     limit_price: Optional[int] = None # The limit price for the order in cents.
+    reasoning: Optional[str] = None  # AI's reasoning for the decision
 
 
 @dataclass
@@ -62,7 +72,26 @@ class XAIClient(TradingLoggerMixin):
         self.db_manager = db_manager
         
         # Initialize xAI async client with proper timeout for reasoning models
-        self.client = AsyncClient(api_key=self.api_key, timeout=3600.0)  # 3600s as recommended by xAI docs
+        # Only if xAI SDK is available and key looks like xAI key
+        self.client = None
+        if XAI_SDK_AVAILABLE and self.api_key.startswith('xai-'):
+            try:
+                self.client = AsyncClient(api_key=self.api_key, timeout=3600.0)
+                self.logger.info("xAI SDK client initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize xAI SDK: {e}")
+        
+        # Initialize OpenRouter client as fallback/primary for OpenRouter models
+        self.openrouter_client = None
+        if settings.api.openrouter_api_key:
+            try:
+                self.openrouter_client = AsyncOpenAI(
+                    api_key=settings.api.openrouter_api_key,
+                    base_url=settings.api.openrouter_base_url
+                )
+                self.logger.info("OpenRouter client initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize OpenRouter client: {e}")
         
         # Model configuration
         self.primary_model = settings.trading.primary_model
@@ -85,6 +114,7 @@ class XAIClient(TradingLoggerMixin):
         self.logger.info(
             "xAI client initialized",
             primary_model=self.primary_model,
+            fallback_model=self.fallback_model,
             logging_enabled=bool(db_manager),
             daily_limit=self.daily_tracker.daily_limit,
             today_cost=self.daily_tracker.total_cost,
@@ -498,7 +528,7 @@ Provide a brief, factual summary under {max_length//2} words. If no current info
             else:
                 prompt = self._create_full_trading_prompt(market_data, portfolio_data, news_summary)
             
-            messages = [{"role": "user", "content": prompt}]
+            messages = [xai_user(prompt)]
             
             # Use appropriate token limits
             max_tokens = 4000 if use_simplified else None  # Use default for full prompt
@@ -700,6 +730,10 @@ Required format:
         
         return SIMPLIFIED_PROMPT_TPL.format(**prompt_params)
 
+    def _is_openrouter_model(self, model: str) -> bool:
+        """Check if model should use OpenRouter instead of xAI SDK."""
+        return model.startswith("x-ai/") or "/" in model
+    
     async def _make_completion_request(
         self, 
         messages: List[Dict],
@@ -710,7 +744,7 @@ Required format:
     ) -> Tuple[Optional[str], float]:
         """
         Make a completion request with cost tracking and fallback model logic.
-        Uses the official xAI SDK pattern from docs.
+        Uses OpenRouter for OpenRouter models, xAI SDK for xAI models.
         """
         # Check daily limits first
         if not await self._check_daily_limits():
@@ -739,6 +773,14 @@ Required format:
                 max_tokens = self.max_tokens
         
         original_max_tokens = max_tokens  # Store original for fallback logic
+        
+        # Check if we should use OpenRouter
+        use_openrouter = self._is_openrouter_model(model_to_use) or self.client is None
+        
+        if use_openrouter and self.openrouter_client:
+            return await self._make_openrouter_request(
+                messages, model_to_use, temperature, max_tokens, max_retries
+            )
         
         for attempt in range(max_retries):
             try:
@@ -913,7 +955,17 @@ Required format:
             # Use smaller token limit for fallback model to be conservative
             fallback_max_tokens = min(max_tokens or self.max_tokens, 4000)
             
-            # Try the fallback model with a single attempt
+            # Check if fallback model should use OpenRouter
+            if self._is_openrouter_model(fallback_model) and self.openrouter_client:
+                return await self._make_openrouter_request(
+                    messages, fallback_model, temperature or self.temperature, fallback_max_tokens, max_retries=1
+                )
+            
+            # Try the fallback model with a single attempt using xAI SDK
+            if not self.client:
+                self.logger.error("No xAI SDK client available for fallback")
+                return None
+                
             chat = self.client.chat.create(
                 model=fallback_model,
                 temperature=temperature or self.temperature,
@@ -955,6 +1007,80 @@ Required format:
             self.logger.error(f"Fallback model failed: {str(e)}")
             return None
 
+    async def _make_openrouter_request(
+        self,
+        messages: List[Dict],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        max_retries: int = 3
+    ) -> Tuple[Optional[str], float]:
+        """
+        Make a completion request via OpenRouter.
+        """
+        if not self.openrouter_client:
+            self.logger.error("OpenRouter client not available")
+            return None, 0.0
+        
+        # Convert xai_user messages to OpenAI format
+        openai_messages = []
+        for msg in messages:
+            if hasattr(msg, 'content'):
+                # xai_user object - content might be a Content object
+                content = msg.content
+                if hasattr(content, 'text'):
+                    content = content.text
+                elif not isinstance(content, str):
+                    content = str(content)
+                openai_messages.append({"role": "user", "content": content})
+            elif isinstance(msg, dict):
+                openai_messages.append(msg)
+            else:
+                openai_messages.append({"role": "user", "content": str(msg)})
+        
+        for attempt in range(max_retries):
+            try:
+                start_time = time.time()
+                
+                response = await self.openrouter_client.chat.completions.create(
+                    model=model,
+                    messages=openai_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                
+                response_content = response.choices[0].message.content
+                processing_time = time.time() - start_time
+                
+                # Estimate cost (OpenRouter pricing varies by model)
+                estimated_tokens = response.usage.total_tokens if hasattr(response, 'usage') and response.usage else len(response_content) // 4
+                cost = estimated_tokens * 0.00001  # Rough estimate
+                
+                self.total_cost += cost
+                self.request_count += 1
+                self._update_daily_cost(cost)
+                asyncio.create_task(self._persist_cost_to_db(cost))
+                
+                self.logger.info(
+                    "OpenRouter request successful",
+                    model=model,
+                    estimated_tokens=estimated_tokens,
+                    cost=cost,
+                    processing_time=processing_time
+                )
+                
+                return response_content, cost
+                
+            except Exception as e:
+                self.logger.warning(f"OpenRouter error on attempt {attempt + 1}: {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    self.logger.error(f"OpenRouter failed after {max_retries} attempts: {str(e)}")
+                    return None, 0.0
+        
+        return None, 0.0
+
     async def get_completion(
         self,
         prompt: str,
@@ -969,7 +1095,12 @@ Required format:
         Returns the raw response text or None if failed/exhausted.
         """
         try:
-            messages = [xai_user(prompt)]
+            # Use xai_user if available, otherwise use dict format
+            if xai_user:
+                messages = [xai_user(prompt)]
+            else:
+                messages = [{"role": "user", "content": prompt}]
+            
             response_content, cost = await self._make_completion_request(
                 messages, 
                 max_tokens=max_tokens, 

@@ -30,10 +30,10 @@ class EnsembleConfig:
     enabled: bool = True
     # Model roster for ensemble decisions
     models: Dict[str, Dict] = field(default_factory=lambda: {
-        "grok-3": {"provider": "xai", "role": "forecaster", "weight": 0.30},
+        "x-ai/grok-3": {"provider": "openrouter", "role": "forecaster", "weight": 0.30},
         "anthropic/claude-3.5-sonnet": {"provider": "openrouter", "role": "news_analyst", "weight": 0.20},
         "openai/gpt-4o": {"provider": "openrouter", "role": "bull_researcher", "weight": 0.20},
-        "google/gemini-flash-1.5": {"provider": "openrouter", "role": "bear_researcher", "weight": 0.15},
+        "google/gemini-3-flash-preview": {"provider": "openrouter", "role": "bear_researcher", "weight": 0.15},
         "deepseek/deepseek-r1": {"provider": "openrouter", "role": "risk_manager", "weight": 0.15},
     })
     min_models_for_consensus: int = 3
@@ -93,9 +93,13 @@ class TradingConfig:
     
     scan_interval_seconds: int = 60      # SANE: 60-second scan interval (was 30)
     
+    # News analysis settings
+    skip_news_for_low_volume: bool = True  # Skip news analysis for low volume markets
+    news_search_volume_threshold: float = 1000.0  # Minimum volume for news search
+    
     # AI model configuration
-    primary_model: str = "grok-3"  # xAI Grok model for forecasting
-    fallback_model: str = "grok-4-1-fast-non-reasoning"  # Fallback to fast non-reasoning variant
+    primary_model: str = "x-ai/grok-3"  # Grok via OpenRouter
+    fallback_model: str = "anthropic/claude-3.5-sonnet"  # Fallback via OpenRouter
     ai_temperature: float = 0  # Lower temperature for more consistent JSON output
     ai_max_tokens: int = 8000    # Reasonable limit for reasoning models (grok-4 works better with 8000)
     
@@ -134,9 +138,9 @@ class TradingConfig:
     min_confidence_threshold: float = 0.45  # DECREASED: Lower confidence threshold (was 0.55, now 0.45)
 
     # Cost control and market analysis frequency - MORE PERMISSIVE
-    daily_ai_budget: float = 10.0  # INCREASED: Higher daily budget (was 5.0, now 10.0)
+    daily_ai_budget: float = 50.0  # INCREASED: Much higher daily budget for testing (was 10.0)
     max_ai_cost_per_decision: float = 0.08  # INCREASED: Higher per-decision cost (was 0.05, now 0.08)
-    analysis_cooldown_hours: int = 3  # DECREASED: Shorter cooldown (was 6, now 3)
+    analysis_cooldown_hours: int = 0  # DISABLED: No cooldown for testing (was 3)
     max_analyses_per_market_per_day: int = 4  # INCREASED: More analyses per day (was 2, now 4)
     
     # Daily AI spending limits - SAFETY CONTROLS
@@ -145,7 +149,7 @@ class TradingConfig:
     sleep_when_limit_reached: bool = True  # Sleep until next day when limit reached
 
     # Enhanced market filtering to reduce analyses - MORE PERMISSIVE
-    min_volume_for_ai_analysis: float = 200.0  # DECREASED: Much lower threshold (was 500, now 200)
+    min_volume_for_ai_analysis: float = 0.0  # Allow all markets for testing (was 200)
     exclude_low_liquidity_categories: List[str] = field(default_factory=lambda: [
         # REMOVED weather and entertainment - trade all categories
     ])

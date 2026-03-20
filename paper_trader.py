@@ -42,64 +42,86 @@ DASHBOARD_OUT = os.path.join(os.path.dirname(__file__), "docs", "paper_dashboard
 
 async def scan_and_log():
     """
-    Scan markets via the existing ingest pipeline, run ensemble decisions,
+    Scan markets from database, run ensemble decisions,
     and log any actionable signals to the paper-trading database.
     """
     from src.clients.kalshi_client import KalshiClient
     from src.clients.xai_client import XAIClient
-    from src.utils.database import DatabaseManager
-    from src.jobs.ingest import run_ingestion
+    from src.utils.database import DatabaseManager, Market
     from src.jobs.decide import make_decision_for_market
+    from src.config.settings import settings
 
     logger.info("📡 Scanning markets for paper trading signals…")
 
-    kalshi = KalshiClient()
+    # Create a paper trading kalshi client with simulated balance
+    class PaperKalshiClient(KalshiClient):
+        async def get_balance(self):
+            # Return simulated $10,000 paper trading balance
+            return {"balance": 1000000, "portfolio_value": 0, "updated_ts": 1773967629}
+
+    kalshi = PaperKalshiClient()
     db = DatabaseManager()
     xai = XAIClient(db_manager=db)
+    
+    # Initialize ModelRouter for ensemble mode
+    from src.clients.model_router import ModelRouter
+    model_router = ModelRouter(db_manager=db)
 
-    # 1. Ingest fresh market data
+    # 1. Fetch markets directly from database (skip ingestion)
     try:
-        market_queue: asyncio.Queue = asyncio.Queue()
-        await run_ingestion(db, market_queue)
-
-        # Drain the queue to collect ingested markets
-        markets = []
-        while not market_queue.empty():
-            markets.append(market_queue.get_nowait())
-
+        logger.info("Fetching markets from database...")
+        
+        # Get eligible markets from DB
+        markets = await db.get_eligible_markets(
+            volume_min=settings.trading.min_volume,
+            max_days_to_expiry=30  # Look at markets expiring within 30 days
+        )
+        
+        logger.info(f"Fetched {len(markets)} markets from database")
+        
         if not markets:
-            logger.info("No markets returned from ingestion.")
+            logger.info("No markets found in database.")
             return 0
+            
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        logger.error(f"Failed to fetch markets: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return 0
 
     signals_logged = 0
 
     # 2. Run decision on each market
-    for market in markets:
+    logger.info(f"Processing {len(markets)} markets for trading signals...")
+    for i, market in enumerate(markets):
         try:
-            market_id = market.get("ticker") or market.get("market_id", "")
-            title = market.get("title", market_id)
+            market_id = market.market_id
+            title = market.title
+            logger.info(f"[{i+1}/{len(markets)}] Analyzing: {title[:60]}...")
 
             decision = await make_decision_for_market(
-                market_data=market,
-                kalshi_client=kalshi,
-                xai_client=xai,
+                market=market,
                 db_manager=db,
+                xai_client=xai,
+                kalshi_client=kalshi,
+                model_router=model_router,
             )
 
+            logger.info(f"  Decision result: {decision}")
             if decision is None:
+                logger.info(f"  -> No decision (returned None)")
                 continue
 
-            action = decision.get("action", "skip")
+            action = decision.action if hasattr(decision, 'action') else decision.get("action", "skip")
+            logger.info(f"  -> Action: {action}")
             if action in ("skip", "hold", None):
+                logger.info(f"  -> Skipped (action={action})")
                 continue
 
-            side = decision.get("side", "NO")
-            confidence = decision.get("confidence", 0)
-            limit_price = decision.get("limit_price", market.get("no_ask", 0))
-            reasoning = decision.get("reasoning", "")
+            side = decision.side if hasattr(decision, 'side') else decision.get("side", "NO")
+            confidence = decision.confidence if hasattr(decision, 'confidence') else decision.get("confidence", 0)
+            limit_price = decision.limit_price if hasattr(decision, 'limit_price') else decision.get("limit_price", market.no_price)
+            reasoning = decision.rationale if hasattr(decision, 'rationale') else decision.get("reasoning", "")
 
             # Only log signals with meaningful confidence edge
             if confidence < 0.55:

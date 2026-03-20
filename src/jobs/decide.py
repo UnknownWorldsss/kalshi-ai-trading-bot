@@ -140,6 +140,7 @@ async def make_decision_for_market(
     try:
         # CHECK 1: Daily budget enforcement
         daily_cost = await db_manager.get_daily_ai_cost()
+        logger.info(f"CHECK 1 - Daily cost: ${daily_cost:.3f} / ${settings.trading.daily_ai_budget}")
         if daily_cost >= settings.trading.daily_ai_budget:
             logger.warning(
                 f"Daily AI budget of ${settings.trading.daily_ai_budget} exceeded. "
@@ -148,28 +149,36 @@ async def make_decision_for_market(
             return None
 
         # CHECK 2: Recent analysis deduplication
-        if await db_manager.was_recently_analyzed(
+        was_recent = await db_manager.was_recently_analyzed(
             market.market_id, 
             settings.trading.analysis_cooldown_hours
-        ):
+        )
+        logger.info(f"CHECK 2 - Was recently analyzed: {was_recent}")
+        if was_recent:
             logger.info(f"Market {market.market_id} was recently analyzed. Skipping to save costs.")
             return None
 
         # CHECK 3: Daily analysis limit per market
         analysis_count_today = await db_manager.get_market_analysis_count_today(market.market_id)
+        logger.info(f"CHECK 3 - Analysis count today: {analysis_count_today} / {settings.trading.max_analyses_per_market_per_day}")
         if analysis_count_today >= settings.trading.max_analyses_per_market_per_day:
             logger.info(f"Market {market.market_id} already analyzed {analysis_count_today} times today. Skipping.")
             return None
 
         # CHECK 4: Volume threshold for AI analysis
+        logger.info(f"CHECK 4 - Market volume: {market.volume}, threshold: {settings.trading.min_volume_for_ai_analysis}")
         if market.volume < settings.trading.min_volume_for_ai_analysis:
             logger.info(f"Market {market.market_id} volume {market.volume} below AI analysis threshold. Skipping.")
             return None
 
         # CHECK 5: Category filtering
-        if market.category.lower() in [cat.lower() for cat in settings.trading.exclude_low_liquidity_categories]:
+        excluded_cats = [cat.lower() for cat in settings.trading.exclude_low_liquidity_categories]
+        logger.info(f"CHECK 5 - Category: {market.category}, excluded: {excluded_cats}")
+        if market.category.lower() in excluded_cats:
             logger.info(f"Market {market.market_id} in excluded category '{market.category}'. Skipping.")
             return None
+        
+        logger.info(f"All checks passed! Proceeding with analysis.")
 
         # Get real-time portfolio balance
         balance_response = await kalshi_client.get_balance()
