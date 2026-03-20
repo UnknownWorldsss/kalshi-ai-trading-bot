@@ -158,25 +158,41 @@ async def scan_and_log():
 
             # Handle both TradingDecision (has action) and Position (has status)
             if hasattr(decision, 'action'):
+                # TradingDecision object
                 action = decision.action
+                side = decision.side if hasattr(decision, 'side') else "NO"
+                confidence = decision.confidence if hasattr(decision, 'confidence') else 0
+                limit_price = decision.limit_price if hasattr(decision, 'limit_price') else market.no_price
+                reasoning = decision.reasoning if hasattr(decision, 'reasoning') else ""
+                strategy = getattr(decision, 'strategy', None) or "directional"
             elif hasattr(decision, 'status') and decision.status == 'open':
                 # Position object returned - treat as BUY
                 action = "buy"
+                side = decision.side if hasattr(decision, 'side') else "NO"
+                confidence = decision.confidence if hasattr(decision, 'confidence') else 0
+                limit_price = decision.entry_price if hasattr(decision, 'entry_price') else market.no_price
+                reasoning = decision.rationale if hasattr(decision, 'rationale') else "Position-based signal"
+                strategy = getattr(decision, 'strategy', None) or "directional"
             elif hasattr(decision, 'get'):
+                # Dict-like object
                 action = decision.get("action", "skip")
+                side = decision.get("side", "NO")
+                confidence = decision.get("confidence", 0)
+                limit_price = decision.get("limit_price", market.no_price)
+                reasoning = decision.get("reasoning", "")
+                strategy = decision.get("strategy", "directional")
             else:
                 action = "skip"
+                side = "NO"
+                confidence = 0
+                limit_price = market.no_price
+                reasoning = ""
+                strategy = "directional"
             
             logger.info(f"  -> Action: {action}")
             if action in ("skip", "hold", None):
                 logger.info(f"  -> Skipped (action={action})")
                 continue
-
-            side = decision.side if hasattr(decision, 'side') else decision.get("side", "NO")
-            confidence = decision.confidence if hasattr(decision, 'confidence') else decision.get("confidence", 0)
-            limit_price = decision.limit_price if hasattr(decision, 'limit_price') else decision.get("limit_price", market.no_price)
-            reasoning = decision.reasoning if hasattr(decision, 'reasoning') else decision.get("reasoning", "")
-            strategy = getattr(decision, 'strategy', None) or decision.get("strategy", "directional") if hasattr(decision, 'get') else "directional"
 
             # Only log signals with meaningful confidence edge
             if confidence < 0.55:
