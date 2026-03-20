@@ -63,17 +63,31 @@ async def _run_ensemble_decision(
     market_data: Dict,
     news_summary: str,
     model_router: ModelRouter,
+    fast_mode: bool = False,
 ) -> Optional[Dict]:
     """
     Run the multi-agent ensemble decision pipeline.
     Returns a dict with action, side, confidence, limit_price, reasoning or None.
+    
+    Args:
+        fast_mode: If True, use FastDebateRunner with parallel Bull/Bear steps
+                   for ~30-40% speed improvement (slightly lower quality).
     """
     logger = get_trading_logger("ensemble_decision")
     try:
-        from src.agents.debate import DebateRunner
+        # Use fast debate runner if enabled in settings or fast_mode=True
+        use_fast = fast_mode or getattr(settings.ensemble, 'fast_mode', False)
+        
+        if use_fast:
+            from src.agents.debate_fast import FastDebateRunner
+            runner = FastDebateRunner()
+            logger.info("Using FastDebateRunner (parallel Bull/Bear)")
+        else:
+            from src.agents.debate import DebateRunner
+            runner = DebateRunner()
+            logger.info("Using standard DebateRunner (sequential)")
+        
         from src.agents.ensemble import EnsembleRunner
-
-        runner = DebateRunner()
 
         # Build get_completion callables for each agent role using the model router
         async def _make_completion(model_name):

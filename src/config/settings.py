@@ -42,6 +42,7 @@ class EnsembleConfig:
     debate_enabled: bool = True
     calibration_tracking: bool = True
     max_ensemble_cost: float = 0.50  # Max cost per ensemble decision
+    fast_mode: bool = False  # If True, use parallel Bull/Bear for ~30% speedup
 
 
 @dataclass
