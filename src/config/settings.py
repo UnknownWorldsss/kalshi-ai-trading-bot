@@ -105,13 +105,13 @@ class TradingConfig:
     ai_max_tokens: int = 8000    # Reasonable limit for reasoning models (grok-4 works better with 8000)
     
     # Position sizing (LEGACY - now using Kelly-primary approach)
-    default_position_size: float = 3.0  # REDUCED: Now using Kelly Criterion as primary method (was 5%, now 3%)
-    position_size_multiplier: float = 1.0  # Multiplier for AI confidence
+    default_position_size: float = 2.0  # Base 2% for low confidence trades
+    position_size_multiplier: float = 2.0  # Higher multiplier for confidence scaling (was 1.0)
     
-    # Kelly Criterion settings (PRIMARY position sizing method) — DISCIPLINED
+    # Kelly Criterion settings (PRIMARY position sizing method) — DYNAMIC
     use_kelly_criterion: bool = True        # Use Kelly Criterion for position sizing (PRIMARY METHOD)
-    kelly_fraction: float = 0.25            # SANE: Quarter-Kelly (was 0.75 beast mode — gambling)
-    max_single_position: float = 0.03       # SANE: 3% max position cap (was 0.05 beast mode)
+    kelly_fraction: float = 0.30            # INCREASED: 30% Kelly (was 25%, allows more sizing)
+    max_single_position: float = 0.05       # INCREASED: 5% max position cap (was 3%, allows high-confidence trades to be bigger)
     
     # Live trading mode control
     live_trading_enabled: bool = field(default_factory=lambda: os.getenv("LIVE_TRADING_ENABLED", "false").lower() == "true")
