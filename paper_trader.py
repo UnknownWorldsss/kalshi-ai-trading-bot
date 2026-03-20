@@ -112,7 +112,17 @@ async def scan_and_log():
                 logger.info(f"  -> No decision (returned None)")
                 continue
 
-            action = decision.action if hasattr(decision, 'action') else decision.get("action", "skip")
+            # Handle both TradingDecision (has action) and Position (has status)
+            if hasattr(decision, 'action'):
+                action = decision.action
+            elif hasattr(decision, 'status') and decision.status == 'open':
+                # Position object returned - treat as BUY
+                action = "buy"
+            elif hasattr(decision, 'get'):
+                action = decision.get("action", "skip")
+            else:
+                action = "skip"
+            
             logger.info(f"  -> Action: {action}")
             if action in ("skip", "hold", None):
                 logger.info(f"  -> Skipped (action={action})")
