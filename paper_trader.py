@@ -68,19 +68,33 @@ async def scan_and_log():
     model_router = ModelRouter(db_manager=db)
 
     # 1. Fetch markets directly from database (skip ingestion)
+    # Also filter out markets we've already logged signals for
     try:
         logger.info("Fetching markets from database...")
         
+        # Get markets we've already logged signals for (in last 24 hours)
+        from src.paper.tracker import get_pending_signals, get_settled_signals
+        existing_signals = get_pending_signals() + get_settled_signals()
+        recently_logged = {
+            s['market_id'] for s in existing_signals 
+            if s.get('timestamp') and (datetime.now(timezone.utc) - datetime.fromisoformat(s['timestamp'].replace('Z', '+00:00'))).days < 1
+        }
+        if recently_logged:
+            logger.info(f"Skipping {len(recently_logged)} markets already logged in last 24h")
+        
         # Get eligible markets from DB
-        markets = await db.get_eligible_markets(
+        all_markets = await db.get_eligible_markets(
             volume_min=settings.trading.min_volume,
             max_days_to_expiry=30  # Look at markets expiring within 30 days
         )
         
-        logger.info(f"Fetched {len(markets)} markets from database")
+        # Filter out recently logged markets
+        markets = [m for m in all_markets if m.market_id not in recently_logged]
+        
+        logger.info(f"Fetched {len(markets)} markets from database ({len(all_markets) - len(markets)} skipped)")
         
         if not markets:
-            logger.info("No markets found in database.")
+            logger.info("No new markets to analyze.")
             return 0
             
     except Exception as e:
