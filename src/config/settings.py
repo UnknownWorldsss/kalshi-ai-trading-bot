@@ -16,7 +16,7 @@ load_dotenv()
 class APIConfig:
     """API configuration settings."""
     kalshi_api_key: str = field(default_factory=lambda: os.getenv("KALSHI_API_KEY", ""))
-    kalshi_base_url: str = "https://api.elections.kalshi.com"  # Updated to new API endpoint
+    kalshi_base_url: str = "https://api.elections.kalshi.com"  # Kalshi elections API endpoint
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     xai_api_key: str = field(default_factory=lambda: os.getenv("XAI_API_KEY", ""))
     openrouter_api_key: str = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
