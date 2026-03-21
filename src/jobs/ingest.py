@@ -125,6 +125,10 @@ async def process_and_queue_markets(
         logger.info(
             f"Found {len(eligible_markets)} eligible markets to process in this batch."
         )
+        
+        # Sort by expiration time (soonest first) to prioritize markets that settle soon
+        eligible_markets.sort(key=lambda m: m.expiration_ts)
+        
         for market in eligible_markets:
             await queue.put(market)
 

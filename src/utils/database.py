@@ -417,6 +417,7 @@ class DatabaseManager(TradingLoggerMixin):
                     expiration_ts <= ? AND
                     status = 'active' AND
                     has_position = 0
+                ORDER BY expiration_ts ASC
             """, (volume_min, now_ts, max_expiry_ts))
             rows = await cursor.fetchall()
             
