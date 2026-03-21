@@ -141,6 +141,8 @@ async def run_ingestion(
                 logger.warning(f"Could not find market with ticker: {market_ticker}")
         else:
             logger.info("Fetching all active markets from Kalshi API with pagination.")
+            
+            # Fetch from main endpoint (sports multi-game markets)
             cursor = None
             while True:
                 response = await kalshi_client.get_markets(limit=100, cursor=cursor)
@@ -162,6 +164,33 @@ async def run_ingestion(
                 cursor = response.get("cursor")
                 if not cursor:
                     break
+            
+            # Also fetch from diverse non-sports series
+            diverse_series = [
+                # Politics
+                'KXTRUMPPARDON', 'KXSECTREASURY', 'KXNEXTJPNPM', 'KXEOCOUNTDAY2',
+                # Crypto
+                'KXLTC', 'KXSUIATH26', 'KXBTC', 'KXETH',
+                # Pop culture
+                'KXSONGRELEASEDATEHS', 'KXOSCARS', 'KXGRAMMY',
+            ]
+            
+            for series in diverse_series:
+                try:
+                    response = await kalshi_client.get_markets(limit=50, series_ticker=series)
+                    markets = response.get("markets", [])
+                    active = [m for m in markets if m["status"] == "active"]
+                    if active:
+                        logger.info(f"Fetched {len(active)} markets from series {series}")
+                        await process_and_queue_markets(
+                            active,
+                            db_manager,
+                            queue,
+                            existing_position_market_ids,
+                            logger,
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to fetch series {series}: {e}")
 
     except Exception as e:
         logger.error(
