@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Market ingestion improvements with category detection from series ticker
+- Events endpoint integration for non-sports markets (politics, crypto, pop culture)
+- Volume-based filtering to skip untradeable markets (60k+ ghost markets filtered)
+- Support for diverse market types: Elon Musk Mars, Pope election, OpenAI IPO, etc.
+
+### Fixed
+- API migration to api.elections.kalshi.com (old endpoint returned 401)
+- Events endpoint 400 error (removed status=active parameter)
+- Category field now populated (was always "unknown" due to API change)
+
+### Changed
+- Ingestion now filters for volume_fp > 0 on all endpoints
+- Improved logging to show "active with volume" counts
+- Paper trader skip logic verified working (24h + pending signal checks)
+
+## [1.1.0] - 2026-03-22
+
+### Added
 - Initial public release of Kalshi AI Trading Bot
 - Multi-agent AI decision engine with Forecaster, Critic, and Trader agents
 - Real-time market scanning and analysis
