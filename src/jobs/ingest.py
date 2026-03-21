@@ -47,9 +47,37 @@ async def process_and_queue_markets(
         volume = int(float(market_data.get("volume_fp", 0) or market_data.get("volume", 0) or 0))
 
         has_position = market_data["ticker"] in existing_position_market_ids
-
+        
+        # Derive category from series ticker since API no longer provides it
+        ticker = market_data["ticker"]
+        series = ticker.split('-')[0] if '-' in ticker else ticker
+        
+        category_map = {
+            'KXNBA': 'basketball', 'KXNHL': 'hockey', 'KXNFL': 'football',
+            'KXCFB': 'college_football', 'KXMBL': 'baseball', 'KXWNB': 'wnba',
+            'KXSOCCER': 'soccer', 'KXTEN': 'tennis', 'KXGOLF': 'golf',
+            'KXBTC': 'crypto', 'KXETH': 'crypto', 'KXLTC': 'crypto', 'KXSUI': 'crypto',
+            'KXTRUMP': 'politics', 'KXPARDON': 'politics', 'KXTREAS': 'politics',
+            'KXPMJPN': 'politics', 'KXSECTREASURY': 'politics', 'KXEOCOUNT': 'politics',
+            'KXELON': 'pop_culture', 'KXSPACEX': 'pop_culture', 'KXOSCARS': 'pop_culture',
+            'KXGRAMMY': 'pop_culture', 'KXSONG': 'pop_culture', 'KXNEWPOPE': 'pop_culture',
+            'KXCPIDATA': 'economics', 'KXJOBDATA': 'economics', 'KXRATEDATA': 'economics',
+            'KXSNOW': 'weather', 'KXTEMP': 'weather', 'KXWARMING': 'science',
+            'KXMARS': 'science', 'KXCOLONIZE': 'science', 'KXERUPT': 'science',
+            'KXRAMP': 'business', 'KXOAI': 'business', 'KXG7': 'politics',
+            'KXISRAEL': 'politics', 'KXIRAN': 'politics', 'KXXI': 'politics',
+            'KXPERSON': 'politics',
+        }
+        
+        # Check for partial matches
+        category = 'other'
+        for prefix, cat in category_map.items():
+            if series.startswith(prefix):
+                category = cat
+                break
+        
         market = Market(
-            market_id=market_data["ticker"],
+            market_id=ticker,
             title=market_data["title"],
             yes_price=yes_price,
             no_price=no_price,
@@ -59,7 +87,7 @@ async def process_and_queue_markets(
                     market_data["expiration_time"].replace("Z", "+00:00")
                 ).timestamp()
             ),
-            category=market_data.get("category", "unknown"),
+            category=category,
             status=market_data["status"],
             last_updated=datetime.now(),
             has_position=has_position,
@@ -142,16 +170,70 @@ async def run_ingestion(
         else:
             logger.info("Fetching all active markets from Kalshi API with pagination.")
             
-            # Fetch from main endpoint (sports multi-game markets)
+            # Fetch from events endpoint to get high-volume non-sports markets
+            logger.info("Fetching markets from events endpoint...")
+            try:
+                events_response = await kalshi_client._make_authenticated_request(
+                    'GET', '/trade-api/v2/events'
+                )
+                events = events_response.get('events', [])
+                logger.info(f"Found {len(events)} events")
+                
+                # Fetch markets from each event (prioritize non-sports)
+                event_markets_fetched = 0
+                for event in events:
+                    event_ticker = event.get('event_ticker')
+                    if not event_ticker:
+                        continue
+                    
+                    try:
+                        response = await kalshi_client.get_markets(
+                            limit=20, event_ticker=event_ticker
+                        )
+                        markets = response.get('markets', [])
+                        
+                        # Filter for active markets WITH volume
+                        active = [
+                            m for m in markets
+                            if m['status'] == 'active'
+                            and float(m.get('volume_fp', 0) or 0) > 0
+                        ]
+                        
+                        if active:
+                            await process_and_queue_markets(
+                                active,
+                                db_manager,
+                                queue,
+                                existing_position_market_ids,
+                                logger,
+                            )
+                            event_markets_fetched += len(active)
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch markets for event {event_ticker}: {e}")
+                
+                logger.info(f"Fetched {event_markets_fetched} markets from events endpoint")
+            except Exception as e:
+                logger.warning(f"Failed to fetch from events endpoint: {e}")
+            
+            # Also fetch from main markets endpoint (sports and other markets)
             cursor = None
             while True:
                 response = await kalshi_client.get_markets(limit=100, cursor=cursor)
-                markets_page = response.get("markets", [])
+                markets_page = response.get('markets', [])
 
-                active_markets = [m for m in markets_page if m["status"] == "active"]
+                # Filter for active markets WITH volume/liquidity
+                active_markets = [
+                    m for m in markets_page 
+                    if m["status"] == "active"
+                    and (
+                        float(m.get("volume_fp", 0) or 0) > 0
+                        or float(m.get("liquidity_dollars", 0) or 0) > 0
+                        or float(m.get("yes_bid_dollars", 0) or 0) > 0
+                    )
+                ]
                 if active_markets:
                     logger.info(
-                        f"Fetched {len(markets_page)} markets, {len(active_markets)} are active."
+                        f"Fetched {len(markets_page)} markets, {len(active_markets)} are active with volume."
                     )
                     await process_and_queue_markets(
                         active_markets,
@@ -179,9 +261,18 @@ async def run_ingestion(
                 try:
                     response = await kalshi_client.get_markets(limit=50, series_ticker=series)
                     markets = response.get("markets", [])
-                    active = [m for m in markets if m["status"] == "active"]
+                    # Filter for active markets WITH volume/liquidity
+                    active = [
+                        m for m in markets
+                        if m["status"] == "active"
+                        and (
+                            float(m.get("volume_fp", 0) or 0) > 0
+                            or float(m.get("liquidity_dollars", 0) or 0) > 0
+                            or float(m.get("yes_bid_dollars", 0) or 0) > 0
+                        )
+                    ]
                     if active:
-                        logger.info(f"Fetched {len(active)} markets from series {series}")
+                        logger.info(f"Fetched {len(active)} markets with volume from series {series}")
                         await process_and_queue_markets(
                             active,
                             db_manager,
