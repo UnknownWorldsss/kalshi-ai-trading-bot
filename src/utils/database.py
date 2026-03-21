@@ -362,6 +362,7 @@ class DatabaseManager(TradingLoggerMixin):
     async def upsert_markets(self, markets: List[Market]):
         """
         Upsert a list of markets into the database.
+        Preserves existing volume data if new volume is zero (API limitation workaround).
         
         Args:
             markets: A list of Market dataclass objects.
@@ -376,6 +377,7 @@ class DatabaseManager(TradingLoggerMixin):
                 market_dict['last_updated'] = m.last_updated.isoformat()
                 market_dicts.append(market_dict)
 
+            # First pass: insert new markets
             await db.executemany("""
                 INSERT INTO markets (market_id, title, yes_price, no_price, volume, expiration_ts, category, status, last_updated, has_position)
                 VALUES (:market_id, :title, :yes_price, :no_price, :volume, :expiration_ts, :category, :status, :last_updated, :has_position)
@@ -383,7 +385,10 @@ class DatabaseManager(TradingLoggerMixin):
                     title=excluded.title,
                     yes_price=excluded.yes_price,
                     no_price=excluded.no_price,
-                    volume=excluded.volume,
+                    volume=CASE 
+                        WHEN excluded.volume > 0 THEN excluded.volume 
+                        ELSE markets.volume 
+                    END,
                     expiration_ts=excluded.expiration_ts,
                     category=excluded.category,
                     status=excluded.status,
@@ -391,7 +396,7 @@ class DatabaseManager(TradingLoggerMixin):
                     has_position=excluded.has_position
             """, market_dicts)
             await db.commit()
-            self.logger.info(f"Upserted {len(markets)} markets.")
+            self.logger.info(f"Upserted {len(markets)} markets (preserved existing volume if new volume was 0).")
 
     async def get_eligible_markets(self, volume_min: int, max_days_to_expiry: int) -> List[Market]:
         """

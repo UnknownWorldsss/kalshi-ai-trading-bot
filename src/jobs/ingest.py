@@ -45,6 +45,11 @@ async def process_and_queue_markets(
 
         # Kalshi API v2 uses volume_fp (string/float) instead of volume (int)
         volume = int(float(market_data.get("volume_fp", 0) or market_data.get("volume", 0) or 0))
+        
+        # Skip markets with zero volume - they already exist in DB with real volume
+        # or are not tradeable (provisional markets)
+        if volume == 0:
+            continue
 
         has_position = market_data["ticker"] in existing_position_market_ids
         
@@ -219,7 +224,79 @@ async def run_ingestion(
             except Exception as e:
                 logger.warning(f"Failed to fetch from events endpoint: {e}")
             
-            # Also fetch from main markets endpoint (sports and other markets)
+            # Fetch from historical endpoint for near-term markets with volume
+            logger.info("Fetching markets from historical endpoint...")
+            try:
+                historical_response = await kalshi_client._make_authenticated_request(
+                    'GET', '/trade-api/v2/historical/markets?limit=200'
+                )
+                historical_markets = historical_response.get('markets', [])
+                logger.info(f"Found {len(historical_markets)} markets in historical endpoint")
+                
+                # Filter for markets with volume that haven't expired yet
+                now_ts = int(datetime.now().timestamp())
+                active_historical = []
+                for m in historical_markets:
+                    try:
+                        exp_ts = int(datetime.fromisoformat(
+                            m.get('expiration_time', '2099-01-01').replace('Z', '+00:00')
+                        ).timestamp())
+                        if exp_ts > now_ts and float(m.get('volume_fp', 0) or 0) > 0:
+                            active_historical.append(m)
+                    except:
+                        pass
+                
+                if active_historical:
+                    logger.info(f"Found {len(active_historical)} active historical markets with volume")
+                    await process_and_queue_markets(
+                        active_historical,
+                        db_manager,
+                        queue,
+                        existing_position_market_ids,
+                        logger,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to fetch from historical endpoint: {e}")
+            
+            # Also fetch near-term markets using settlement_before filter
+            logger.info("Fetching near-term markets with settlement_before filter...")
+            try:
+                from datetime import timedelta
+                soon = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+                near_term_response = await kalshi_client._make_authenticated_request(
+                    'GET', f'/trade-api/v2/markets?limit=200&settlement_before={soon}'
+                )
+                near_term_markets = near_term_response.get('markets', [])
+                logger.info(f"Found {len(near_term_markets)} near-term markets settling before {soon}")
+                
+                # Process all near-term markets (even with 0 volume - they may have data in DB)
+                now_ts = int(datetime.now().timestamp())
+                active_near_term = []
+                for m in near_term_markets:
+                    try:
+                        exp_ts = int(datetime.fromisoformat(
+                            m.get('expiration_time', '2099-01-01').replace('Z', '+00:00')
+                        ).timestamp())
+                        # Include if not expired and has any activity indicators
+                        if exp_ts > now_ts:
+                            vol = float(m.get('volume_fp', 0) or 0)
+                            has_bid = float(m.get('yes_bid_dollars', 0) or 0) > 0
+                            if vol > 0 or has_bid:
+                                active_near_term.append(m)
+                    except:
+                        pass
+                
+                if active_near_term:
+                    logger.info(f"Found {len(active_near_term)} active near-term markets")
+                    await process_and_queue_markets(
+                        active_near_term,
+                        db_manager,
+                        queue,
+                        existing_position_market_ids,
+                        logger,
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to fetch near-term markets: {e}")
             cursor = None
             while True:
                 response = await kalshi_client.get_markets(limit=100, cursor=cursor)
