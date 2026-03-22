@@ -277,6 +277,69 @@ async def run_ingestion(
             except Exception as e:
                 logger.warning(f"Failed to fetch from historical endpoint: {e}")
             
+            # Fetch ECONOMIC series markets directly (CPI, Fed, etc.)
+            logger.info("Fetching economic series markets (CPI, Fed, GDP, etc.)...")
+            economic_series = [
+                'KXCPI', 'KXCPIYOY', 'KXFED', 'KXFEDDECISION', 
+                'KXU3', 'KXGDP', 'KXADP', 'KXPAYROLLS',
+                'KXECB', 'KXWTI', 'KXINX', 'KXEGGS'
+            ]
+            
+            economic_markets_fetched = 0
+            for series in economic_series:
+                try:
+                    response = await kalshi_client.get_markets(
+                        limit=50, series_ticker=series
+                    )
+                    markets = response.get('markets', [])
+                    
+                    if markets:
+                        logger.info(f"  {series}: {len(markets)} markets")
+                        # Process all markets (even 0 volume - DB may have data)
+                        await process_and_queue_markets(
+                            markets,
+                            db_manager,
+                            queue,
+                            existing_position_market_ids,
+                            logger,
+                        )
+                        economic_markets_fetched += len(markets)
+                except Exception as e:
+                    logger.debug(f"No markets for series {series}: {e}")
+            
+            logger.info(f"Fetched {economic_markets_fetched} markets from economic series")
+            
+            # Also fetch POLITICS series markets
+            logger.info("Fetching politics series markets...")
+            politics_series = [
+                'KXTRUMP', 'KXPARDON', 'KXTREAS', 'KXCR',
+                'KXPMJPN', 'KXSECTREASURY', 'KXEOCOUNT',
+                'KXG7', 'KXISRAEL', 'KXIRAN', 'KXXI', 'KXXISUCCESSOR'
+            ]
+            
+            politics_markets_fetched = 0
+            for series in politics_series:
+                try:
+                    response = await kalshi_client.get_markets(
+                        limit=30, series_ticker=series
+                    )
+                    markets = response.get('markets', [])
+                    
+                    if markets:
+                        logger.info(f"  {series}: {len(markets)} markets")
+                        await process_and_queue_markets(
+                            markets,
+                            db_manager,
+                            queue,
+                            existing_position_market_ids,
+                            logger,
+                        )
+                        politics_markets_fetched += len(markets)
+                except Exception as e:
+                    logger.debug(f"No markets for series {series}: {e}")
+            
+            logger.info(f"Fetched {politics_markets_fetched} markets from politics series")
+            
             # Also fetch near-term markets using settlement_before filter
             logger.info("Fetching near-term markets with settlement_before filter...")
             try:
