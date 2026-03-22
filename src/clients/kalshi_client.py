@@ -426,7 +426,8 @@ class KalshiClient(TradingLoggerMixin):
         category: Optional[str] = None,
         tags: Optional[str] = None,
         include_volume: bool = True,
-        min_updated_ts: Optional[int] = None
+        min_updated_ts: Optional[int] = None,
+        limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Get list of all available series.
@@ -439,6 +440,7 @@ class KalshiClient(TradingLoggerMixin):
             tags: Filter by tags (comma-separated)
             include_volume: Include total volume traded across all events in series
             min_updated_ts: Filter series updated after this Unix timestamp
+            limit: Maximum number of series to return
         
         Returns:
             Series list data
@@ -450,6 +452,8 @@ class KalshiClient(TradingLoggerMixin):
             params["tags"] = tags
         if min_updated_ts:
             params["min_updated_ts"] = min_updated_ts
+        if limit:
+            params["limit"] = limit
         
         return await self._make_authenticated_request(
             "GET", "/trade-api/v2/series", params=params, require_auth=False
