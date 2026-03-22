@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Comprehensive Kalshi API Coverage**: 31 new endpoints added for complete API access
+  - Historical data endpoints (markets, fills, orders, trades, candlesticks)
+  - Batch order operations (create/cancel up to 20 orders at once)
+  - Order management (amend, decrease, queue positions)
+  - Order groups (create, delete, reset, trigger, update limits)
+  - Subaccount management (create, transfer, balances, netting)
+  - API key management (list, create, generate, delete)
+  - Series data (fee changes, candlesticks)
+  - Exchange info (status, announcements, schedule, historical cutoff)
+- Dynamic series discovery: Ingestion now fetches ALL 9,139 series from `/series` endpoint
+- Economic series queries: KXCPI, KXFED, KXU3, KXGDP, KXADP, and more
+- Politics series queries: KXTRUMP, KXTREAS, KXG7, KXXI, and more
 - Market ingestion improvements with category detection from series ticker
 - Events endpoint integration for non-sports markets (politics, crypto, pop culture)
 - Volume-based filtering to skip untradeable markets (60k+ ghost markets filtered)
@@ -17,11 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API migration to api.elections.kalshi.com (old endpoint returned 401)
 - Events endpoint 400 error (removed status=active parameter)
 - Category field now populated (was always "unknown" due to API change)
+- Volume preservation: Database now preserves existing volume when API returns zero
+- MVE category detection: Added KXMVESPORTSMULTIGAMEEXTENDED and related prefixes
 
 ### Changed
 - Ingestion now filters for volume_fp > 0 on all endpoints
 - Improved logging to show "active with volume" counts
 - Paper trader skip logic verified working (24h + pending signal checks)
+- Paper trading config: min_volume=0, max_time_to_expiry_days=365 for maximum coverage
+- Ingestion prioritizes high-volume series (top 30 by volume)
 
 ## [1.1.0] - 2026-03-22
 
