@@ -58,20 +58,39 @@ async def process_and_queue_markets(
         series = ticker.split('-')[0] if '-' in ticker else ticker
         
         category_map = {
+            # Sports - NBA/NHL/MLB/etc
             'KXNBA': 'basketball', 'KXNHL': 'hockey', 'KXNFL': 'football',
             'KXCFB': 'college_football', 'KXMBL': 'baseball', 'KXWNB': 'wnba',
             'KXSOCCER': 'soccer', 'KXTEN': 'tennis', 'KXGOLF': 'golf',
+            # Sports - Multivariate Events (MVE) - the main volume markets
+            'KXMVESPORTSMULTIGAMEEXTENDED': 'sports_parlay',
+            'KXMVECROSSCATEGORY': 'sports_parlay',
+            'KXMVECBCHAMPIONSHIP': 'sports_parlay',
+            'KXINTLFRIENDLYGAME': 'soccer',
+            'KXDOTA2GAME': 'esports', 'KXCS2GAME': 'esports', 'KXLOLGAME': 'esports',
+            'KXCBAGAME': 'basketball', 'KXKBLGAME': 'basketball',
+            'KXWTAMATCH': 'tennis', 'KXRUGBYNRLMATCH': 'rugby',
+            'KXNCAAMBSPREAD': 'basketball', 'KXMVENBASINGLEGAME': 'basketball',
+            'KXLOLTOTALMAPS': 'esports', 'KXCS2MAP': 'esports', 'KXATPSETWINNER': 'tennis',
+            # Crypto
             'KXBTC': 'crypto', 'KXETH': 'crypto', 'KXLTC': 'crypto', 'KXSUI': 'crypto',
+            # Politics
             'KXTRUMP': 'politics', 'KXPARDON': 'politics', 'KXTREAS': 'politics',
             'KXPMJPN': 'politics', 'KXSECTREASURY': 'politics', 'KXEOCOUNT': 'politics',
+            'KXG7': 'politics', 'KXISRAEL': 'politics', 'KXIRAN': 'politics',
+            'KXXI': 'politics', 'KXXISUCCESSOR': 'politics', 'KXPERSON': 'politics',
+            'KXNEXTISRAELPM': 'politics',
+            # Pop Culture
             'KXELON': 'pop_culture', 'KXSPACEX': 'pop_culture', 'KXOSCARS': 'pop_culture',
             'KXGRAMMY': 'pop_culture', 'KXSONG': 'pop_culture', 'KXNEWPOPE': 'pop_culture',
+            # Economics
             'KXCPIDATA': 'economics', 'KXJOBDATA': 'economics', 'KXRATEDATA': 'economics',
+            'KXCPI': 'economics', 'KXFED': 'economics',
+            # Weather/Science
             'KXSNOW': 'weather', 'KXTEMP': 'weather', 'KXWARMING': 'science',
             'KXMARS': 'science', 'KXCOLONIZE': 'science', 'KXERUPT': 'science',
-            'KXRAMP': 'business', 'KXOAI': 'business', 'KXG7': 'politics',
-            'KXISRAEL': 'politics', 'KXIRAN': 'politics', 'KXXI': 'politics',
-            'KXPERSON': 'politics',
+            # Business
+            'KXRAMP': 'business', 'KXOAI': 'business',
         }
         
         # Check for partial matches

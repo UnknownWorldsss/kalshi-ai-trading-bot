@@ -75,9 +75,9 @@ class TradingConfig:
     max_positions: int = 10              # SANE: 10 concurrent positions (was 15)
     min_balance: float = 100.0          # SANE: $100 minimum balance (was $50)
     
-    # Market filtering criteria — DISCIPLINED
-    min_volume: float = 500.0           # SANE: Higher volume requirement (was 200 beast mode)
-    max_time_to_expiry_days: int = 14   # SANE: Shorter timeframes (was 30)
+    # Market filtering criteria — PAPER TRADING MODE (lower thresholds for more action)
+    min_volume: float = 0.0            # ALL: Include all markets with any volume
+    max_time_to_expiry_days: int = 365   # ALL: Scan all markets up to 1 year out (was 14)
     
     # AI decision making — DATA-DRIVEN THRESHOLDS  
     min_confidence_to_trade: float = 0.60   # OPTIMIZED: 60% confidence minimum (reduced from 65% due to zero-trade issue)
