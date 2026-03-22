@@ -417,6 +417,202 @@ class KalshiClient(TradingLoggerMixin):
             "GET", "/trade-api/v2/portfolio/trades", params=params
         )
     
+    # =========================================================================
+    # SERIES ENDPOINTS - For discovering all available market series
+    # =========================================================================
+    
+    async def get_series_list(
+        self,
+        category: Optional[str] = None,
+        tags: Optional[str] = None,
+        include_volume: bool = True,
+        min_updated_ts: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get list of all available series.
+        
+        A series represents a template for recurring events (e.g., "Monthly Jobs Report",
+        "Weekly Initial Jobless Claims", "Daily Weather in NYC").
+        
+        Args:
+            category: Filter by category (e.g., 'economics', 'politics', 'sports')
+            tags: Filter by tags (comma-separated)
+            include_volume: Include total volume traded across all events in series
+            min_updated_ts: Filter series updated after this Unix timestamp
+        
+        Returns:
+            Series list data
+        """
+        params = {"include_volume": include_volume}
+        if category:
+            params["category"] = category
+        if tags:
+            params["tags"] = tags
+        if min_updated_ts:
+            params["min_updated_ts"] = min_updated_ts
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/series", params=params, require_auth=False
+        )
+    
+    async def get_series(self, series_ticker: str, include_volume: bool = True) -> Dict[str, Any]:
+        """
+        Get data about a specific series by its ticker.
+        
+        Args:
+            series_ticker: Series ticker (e.g., 'KXCPI', 'KXFED')
+            include_volume: Include total volume for the series
+        
+        Returns:
+            Series data
+        """
+        params = {"include_volume": include_volume}
+        return await self._make_authenticated_request(
+            "GET", f"/trade-api/v2/series/{series_ticker}", params=params, require_auth=False
+        )
+    
+    # =========================================================================
+    # EXCHANGE ENDPOINTS - For exchange status and announcements
+    # =========================================================================
+    
+    async def get_exchange_status(self) -> Dict[str, Any]:
+        """
+        Get current exchange status.
+        
+        Returns:
+            Exchange status including trading_active, exchange_active
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/exchange/status", require_auth=False
+        )
+    
+    async def get_exchange_announcements(self) -> Dict[str, Any]:
+        """
+        Get all exchange-wide announcements.
+        
+        Returns:
+            List of announcements
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/exchange/announcements", require_auth=False
+        )
+    
+    async def get_exchange_schedule(self) -> Dict[str, Any]:
+        """
+        Get exchange trading schedule.
+        
+        Returns:
+            Trading hours and maintenance windows
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/exchange/schedule", require_auth=False
+        )
+    
+    async def get_historical_cutoff(self) -> Dict[str, Any]:
+        """
+        Get historical cutoff timestamps.
+        
+        Markets/settlements before these timestamps must be accessed via /historical/ endpoints.
+        
+        Returns:
+            Cutoff timestamps for markets, trades, and orders
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/historical/cutoff", require_auth=False
+        )
+    
+    # =========================================================================
+    # SEARCH ENDPOINTS - For discovering markets by category/tags
+    # =========================================================================
+    
+    async def get_tags_by_categories(self) -> Dict[str, Any]:
+        """
+        Get tags organized by series categories.
+        
+        Returns:
+            Mapping of categories to their associated tags
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/search/tags_by_categories", require_auth=False
+        )
+    
+    async def get_filters_by_sport(self) -> Dict[str, Any]:
+        """
+        Get available filters organized by sport.
+        
+        Returns:
+            Filtering options for each sport including scopes and competitions
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/search/filters_by_sport", require_auth=False
+        )
+    
+    # =========================================================================
+    # PORTFOLIO ENDPOINTS - Additional portfolio management
+    # =========================================================================
+    
+    async def get_settlements(
+        self,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        ticker: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get settlement history.
+        
+        Args:
+            limit: Maximum number of settlements to return
+            cursor: Pagination cursor
+            ticker: Filter by market ticker
+        
+        Returns:
+            Settlement history data
+        """
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if ticker:
+            params["ticker"] = ticker
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/settlements", params=params
+        )
+    
+    async def get_fills(
+        self,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        ticker: Optional[str] = None,
+        min_ts: Optional[int] = None,
+        max_ts: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get all fills (trades that were matched).
+        
+        Args:
+            limit: Maximum number of fills to return
+            cursor: Pagination cursor
+            ticker: Filter by market ticker
+            min_ts: Filter fills after this timestamp
+            max_ts: Filter fills before this timestamp
+        
+        Returns:
+            Fills data
+        """
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if ticker:
+            params["ticker"] = ticker
+        if min_ts:
+            params["min_ts"] = min_ts
+        if max_ts:
+            params["max_ts"] = max_ts
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/fills", params=params
+        )
+    
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()

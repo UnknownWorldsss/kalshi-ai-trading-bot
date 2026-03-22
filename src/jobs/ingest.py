@@ -277,6 +277,54 @@ async def run_ingestion(
             except Exception as e:
                 logger.warning(f"Failed to fetch from historical endpoint: {e}")
             
+            # Fetch ALL series dynamically and query each for markets
+            logger.info("Fetching all available series from Kalshi...")
+            try:
+                series_response = await kalshi_client.get_series_list(include_volume=True)
+                all_series = series_response.get('series', [])
+                logger.info(f"Found {len(all_series)} total series")
+                
+                # Sort by volume (highest first) to prioritize liquid markets
+                series_with_volume = [s for s in all_series if float(s.get('volume_fp', 0) or 0) > 0]
+                series_with_volume.sort(key=lambda s: float(s.get('volume_fp', 0) or 0), reverse=True)
+                
+                logger.info(f"Top 10 series by volume:")
+                for s in series_with_volume[:10]:
+                    vol = float(s.get('volume_fp', 0) or 0)
+                    logger.info(f"  {s.get('ticker')}: {vol:,.0f} vol - {s.get('title', '')[:50]}")
+                
+                # Query markets from top series (prioritize high-volume)
+                series_markets_fetched = 0
+                top_series = series_with_volume[:30]  # Top 30 by volume
+                
+                for series in top_series:
+                    series_ticker = series.get('ticker')
+                    if not series_ticker:
+                        continue
+                    
+                    try:
+                        response = await kalshi_client.get_markets(
+                            limit=100, series_ticker=series_ticker
+                        )
+                        markets = response.get('markets', [])
+                        
+                        if markets:
+                            logger.info(f"  {series_ticker}: {len(markets)} markets")
+                            await process_and_queue_markets(
+                                markets,
+                                db_manager,
+                                queue,
+                                existing_position_market_ids,
+                                logger,
+                            )
+                            series_markets_fetched += len(markets)
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch markets for series {series_ticker}: {e}")
+                
+                logger.info(f"Fetched {series_markets_fetched} markets from top {len(top_series)} series")
+            except Exception as e:
+                logger.warning(f"Failed to fetch series list: {e}")
+            
             # Fetch ECONOMIC series markets directly (CPI, Fed, etc.)
             logger.info("Fetching economic series markets (CPI, Fed, GDP, etc.)...")
             economic_series = [
