@@ -613,6 +613,708 @@ class KalshiClient(TradingLoggerMixin):
             "GET", "/trade-api/v2/portfolio/fills", params=params
         )
     
+    # =========================================================================
+    # HISTORICAL ENDPOINTS - For archived markets and data
+    # =========================================================================
+    
+    async def get_historical_markets(
+        self,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        tickers: Optional[List[str]] = None,
+        event_ticker: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get markets that have been archived to the historical database.
+        
+        Markets settling before the historical cutoff are only available here.
+        
+        Args:
+            limit: Maximum number of markets to return
+            cursor: Pagination cursor
+            tickers: List of specific tickers to fetch
+            event_ticker: Filter by event ticker
+        
+        Returns:
+            Historical markets data
+        """
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if tickers:
+            params["tickers"] = ",".join(tickers)
+        if event_ticker:
+            params["event_ticker"] = event_ticker
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/historical/markets", params=params, require_auth=False
+        )
+    
+    async def get_historical_market(self, ticker: str) -> Dict[str, Any]:
+        """
+        Get data about a specific historical market by its ticker.
+        
+        Args:
+            ticker: Market ticker
+        
+        Returns:
+            Historical market data
+        """
+        return await self._make_authenticated_request(
+            "GET", f"/trade-api/v2/historical/markets/{ticker}", require_auth=False
+        )
+    
+    async def get_historical_candlesticks(
+        self,
+        ticker: str,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 1440
+    ) -> Dict[str, Any]:
+        """
+        Get historical candlestick data for archived markets.
+        
+        Args:
+            ticker: Market ticker
+            start_ts: Start timestamp (Unix)
+            end_ts: End timestamp (Unix)
+            period_interval: Candlestick period in minutes (1, 60, or 1440)
+        
+        Returns:
+            Candlestick data
+        """
+        params = {
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "period_interval": period_interval
+        }
+        return await self._make_authenticated_request(
+            "GET", f"/trade-api/v2/historical/markets/{ticker}/candlesticks",
+            params=params, require_auth=False
+        )
+    
+    async def get_historical_fills(
+        self,
+        ticker: Optional[str] = None,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        max_ts: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get historical fills (trades before the cutoff).
+        
+        Args:
+            ticker: Filter by ticker
+            limit: Maximum number of fills
+            cursor: Pagination cursor
+            max_ts: Filter fills before this timestamp
+        
+        Returns:
+            Historical fills data
+        """
+        params = {"limit": limit}
+        if ticker:
+            params["ticker"] = ticker
+        if cursor:
+            params["cursor"] = cursor
+        if max_ts:
+            params["max_ts"] = max_ts
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/historical/fills", params=params
+        )
+    
+    async def get_historical_orders(
+        self,
+        ticker: Optional[str] = None,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        max_ts: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get orders that have been archived to the historical database.
+        
+        Args:
+            ticker: Filter by ticker
+            limit: Maximum number of orders
+            cursor: Pagination cursor
+            max_ts: Filter orders before this timestamp
+        
+        Returns:
+            Historical orders data
+        """
+        params = {"limit": limit}
+        if ticker:
+            params["ticker"] = ticker
+        if cursor:
+            params["cursor"] = cursor
+        if max_ts:
+            params["max_ts"] = max_ts
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/historical/orders", params=params
+        )
+    
+    async def get_historical_trades(
+        self,
+        ticker: Optional[str] = None,
+        limit: int = 100,
+        cursor: Optional[str] = None,
+        min_ts: Optional[int] = None,
+        max_ts: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Get all historical trades for all markets.
+        
+        Args:
+            ticker: Filter by ticker
+            limit: Maximum number of trades
+            cursor: Pagination cursor
+            min_ts: Filter trades after this timestamp
+            max_ts: Filter trades before this timestamp
+        
+        Returns:
+            Historical trades data
+        """
+        params = {"limit": limit}
+        if ticker:
+            params["ticker"] = ticker
+        if cursor:
+            params["cursor"] = cursor
+        if min_ts:
+            params["min_ts"] = min_ts
+        if max_ts:
+            params["max_ts"] = max_ts
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/historical/trades", params=params, require_auth=False
+        )
+    
+    # =========================================================================
+    # BATCH ORDER ENDPOINTS - For managing multiple orders
+    # =========================================================================
+    
+    async def batch_create_orders(self, orders: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Submit a batch of orders (max 20 per batch).
+        
+        Args:
+            orders: List of order data dictionaries
+        
+        Returns:
+            Batch creation results
+        """
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/portfolio/orders/batched",
+            json_data={"orders": orders}
+        )
+    
+    async def batch_cancel_orders(self, order_ids: List[str]) -> Dict[str, Any]:
+        """
+        Cancel up to 20 orders at once.
+        
+        Args:
+            order_ids: List of order IDs to cancel
+        
+        Returns:
+            Batch cancellation results
+        """
+        return await self._make_authenticated_request(
+            "DELETE", "/trade-api/v2/portfolio/orders/batched",
+            json_data={"order_ids": order_ids}
+        )
+    
+    async def amend_order(
+        self,
+        order_id: str,
+        count: Optional[int] = None,
+        yes_price_dollars: Optional[float] = None,
+        no_price_dollars: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Amend an existing order (change price/size without cancel+replace).
+        
+        Args:
+            order_id: Order ID to amend
+            count: New contract count
+            yes_price_dollars: New yes price in dollars
+            no_price_dollars: New no price in dollars
+        
+        Returns:
+            Amended order data
+        """
+        json_data = {}
+        if count is not None:
+            json_data["count"] = count
+        if yes_price_dollars is not None:
+            json_data["yes_price_dollars"] = yes_price_dollars
+        if no_price_dollars is not None:
+            json_data["no_price_dollars"] = no_price_dollars
+        
+        return await self._make_authenticated_request(
+            "POST", f"/trade-api/v2/portfolio/orders/{order_id}/amend",
+            json_data=json_data
+        )
+    
+    async def decrease_order(self, order_id: str, count: int) -> Dict[str, Any]:
+        """
+        Decrease the number of contracts in an existing order.
+        
+        Args:
+            order_id: Order ID to decrease
+            count: Number of contracts to decrease by
+        
+        Returns:
+            Updated order data
+        """
+        return await self._make_authenticated_request(
+            "POST", f"/trade-api/v2/portfolio/orders/{order_id}/decrease",
+            json_data={"count": count}
+        )
+    
+    async def get_order_queue_positions(
+        self,
+        market_tickers: Optional[List[str]] = None,
+        event_ticker: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get queue positions for all resting orders.
+        
+        Queue position = number of contracts that need to be matched before
+        this order receives a partial or full match (price-time priority).
+        
+        Args:
+            market_tickers: Filter by specific market tickers
+            event_ticker: Filter by event ticker
+        
+        Returns:
+            Queue positions data
+        """
+        params = {}
+        if market_tickers:
+            params["market_tickers"] = ",".join(market_tickers)
+        if event_ticker:
+            params["event_ticker"] = event_ticker
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/orders/queue_positions", params=params
+        )
+    
+    async def get_order_queue_position(self, order_id: str) -> Dict[str, Any]:
+        """
+        Get queue position for a single order.
+        
+        Args:
+            order_id: Order ID
+        
+        Returns:
+            Queue position data
+        """
+        return await self._make_authenticated_request(
+            "GET", f"/trade-api/v2/portfolio/orders/{order_id}/queue_position"
+        )
+    
+    # =========================================================================
+    # ORDER GROUP ENDPOINTS - For managing order groups
+    # =========================================================================
+    
+    async def get_order_groups(self) -> Dict[str, Any]:
+        """
+        Get all order groups for the authenticated user.
+        
+        Returns:
+            List of order groups
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/order_groups"
+        )
+    
+    async def create_order_group(
+        self,
+        name: str,
+        contracts_limit: int,
+        order_ids: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new order group with a contracts limit.
+        
+        When the limit is hit over a rolling 15-second window, all orders
+        in the group are cancelled.
+        
+        Args:
+            name: Group name
+            contracts_limit: Max contracts per 15-second window
+            order_ids: Initial order IDs to add to group
+        
+        Returns:
+            Created order group data
+        """
+        json_data = {"name": name, "contracts_limit": contracts_limit}
+        if order_ids:
+            json_data["order_ids"] = order_ids
+        
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/portfolio/order_groups/create",
+            json_data=json_data
+        )
+    
+    async def get_order_group(self, order_group_id: str) -> Dict[str, Any]:
+        """
+        Get details for a single order group.
+        
+        Args:
+            order_group_id: Order group ID
+        
+        Returns:
+            Order group details
+        """
+        return await self._make_authenticated_request(
+            "GET", f"/trade-api/v2/portfolio/order_groups/{order_group_id}"
+        )
+    
+    async def delete_order_group(self, order_group_id: str) -> Dict[str, Any]:
+        """
+        Delete an order group and cancel all orders within it.
+        
+        Args:
+            order_group_id: Order group ID to delete
+        
+        Returns:
+            Empty response
+        """
+        return await self._make_authenticated_request(
+            "DELETE", f"/trade-api/v2/portfolio/order_groups/{order_group_id}"
+        )
+    
+    async def reset_order_group(self, order_group_id: str) -> Dict[str, Any]:
+        """
+        Reset the order group's matched contracts counter to zero.
+        
+        Args:
+            order_group_id: Order group ID
+        
+        Returns:
+            Empty response
+        """
+        return await self._make_authenticated_request(
+            "PUT", f"/trade-api/v2/portfolio/order_groups/{order_group_id}/reset"
+        )
+    
+    async def trigger_order_group(self, order_group_id: str) -> Dict[str, Any]:
+        """
+        Trigger the order group (cancel all orders, prevent new orders).
+        
+        Args:
+            order_group_id: Order group ID
+        
+        Returns:
+            Empty response
+        """
+        return await self._make_authenticated_request(
+            "PUT", f"/trade-api/v2/portfolio/order_groups/{order_group_id}/trigger"
+        )
+    
+    async def update_order_group_limit(
+        self,
+        order_group_id: str,
+        contracts_limit: int
+    ) -> Dict[str, Any]:
+        """
+        Update the order group contracts limit.
+        
+        Args:
+            order_group_id: Order group ID
+            contracts_limit: New contracts limit
+        
+        Returns:
+            Empty response
+        """
+        return await self._make_authenticated_request(
+            "PUT", f"/trade-api/v2/portfolio/order_groups/{order_group_id}/limit",
+            json_data={"contracts_limit": contracts_limit}
+        )
+    
+    # =========================================================================
+    # SUBACCOUNT ENDPOINTS - For managing subaccounts
+    # =========================================================================
+    
+    async def create_subaccount(self) -> Dict[str, Any]:
+        """
+        Create a new subaccount (numbered sequentially starting from 1).
+        
+        Maximum 32 subaccounts per user.
+        
+        Returns:
+            Created subaccount data
+        """
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/portfolio/subaccounts"
+        )
+    
+    async def transfer_between_subaccounts(
+        self,
+        from_account: int,
+        to_account: int,
+        amount_cents: int
+    ) -> Dict[str, Any]:
+        """
+        Transfer funds between subaccounts.
+        
+        Use 0 for primary account, 1-32 for numbered subaccounts.
+        
+        Args:
+            from_account: Source subaccount number
+            to_account: Destination subaccount number
+            amount_cents: Amount to transfer in cents
+        
+        Returns:
+            Transfer result
+        """
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/portfolio/subaccounts/transfer",
+            json_data={
+                "from_subaccount": from_account,
+                "to_subaccount": to_account,
+                "amount": amount_cents
+            }
+        )
+    
+    async def get_subaccount_balances(self) -> Dict[str, Any]:
+        """
+        Get balances for all subaccounts including primary.
+        
+        Returns:
+            Subaccount balances
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/subaccounts/balances"
+        )
+    
+    async def get_subaccount_transfers(
+        self,
+        limit: int = 100,
+        cursor: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get all transfers between subaccounts.
+        
+        Args:
+            limit: Maximum number of transfers
+            cursor: Pagination cursor
+        
+        Returns:
+            Transfers data
+        """
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/subaccounts/transfers", params=params
+        )
+    
+    async def update_subaccount_netting(
+        self,
+        subaccount: int,
+        netting_enabled: bool
+    ) -> Dict[str, Any]:
+        """
+        Update netting enabled setting for a subaccount.
+        
+        Args:
+            subaccount: Subaccount number (0 for primary)
+            netting_enabled: Whether to enable netting
+        
+        Returns:
+            Updated netting settings
+        """
+        return await self._make_authenticated_request(
+            "PUT", "/trade-api/v2/portfolio/subaccounts/netting",
+            json_data={
+                "subaccount": subaccount,
+                "netting_enabled": netting_enabled
+            }
+        )
+    
+    async def get_subaccount_netting(self) -> Dict[str, Any]:
+        """
+        Get netting enabled settings for all subaccounts.
+        
+        Returns:
+            Netting settings
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/subaccounts/netting"
+        )
+    
+    # =========================================================================
+    # API KEY ENDPOINTS - For managing API keys
+    # =========================================================================
+    
+    async def get_api_keys(self) -> Dict[str, Any]:
+        """
+        Get all API keys associated with the user.
+        
+        Returns:
+            List of API keys
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/api_keys"
+        )
+    
+    async def create_api_key(self, name: str, public_key: str) -> Dict[str, Any]:
+        """
+        Create a new API key with a user-provided public key.
+        
+        Requires Premier or Market Maker API usage level.
+        
+        Args:
+            name: API key name
+            public_key: RSA public key PEM string
+        
+        Returns:
+            Created API key data
+        """
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/api_keys",
+            json_data={"name": name, "public_key": public_key}
+        )
+    
+    async def generate_api_key(self, name: str) -> Dict[str, Any]:
+        """
+        Generate a new API key with an auto-created key pair.
+        
+        Returns the private key - store it securely, it cannot be retrieved again!
+        
+        Args:
+            name: API key name
+        
+        Returns:
+            Generated API key data including private_key
+        """
+        return await self._make_authenticated_request(
+            "POST", "/trade-api/v2/api_keys/generate",
+            json_data={"name": name}
+        )
+    
+    async def delete_api_key(self, api_key_id: str) -> Dict[str, Any]:
+        """
+        Permanently delete an API key.
+        
+        Args:
+            api_key_id: API key ID to delete
+        
+        Returns:
+            Empty response
+        """
+        return await self._make_authenticated_request(
+            "DELETE", f"/trade-api/v2/api_keys/{api_key_id}"
+        )
+    
+    # =========================================================================
+    # SERIES DATA ENDPOINTS - For series-specific market data
+    # =========================================================================
+    
+    async def get_series_fee_changes(
+        self,
+        series_ticker: Optional[str] = None,
+        show_historical: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Get fee changes for series.
+        
+        Args:
+            series_ticker: Filter by specific series
+            show_historical: Include historical fee changes
+        
+        Returns:
+            Fee changes data
+        """
+        params = {"show_historical": show_historical}
+        if series_ticker:
+            params["series_ticker"] = series_ticker
+        
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/series/fee_changes", params=params
+        )
+    
+    async def get_market_candlesticks(
+        self,
+        series_ticker: str,
+        ticker: str,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 1440
+    ) -> Dict[str, Any]:
+        """
+        Get candlestick data for a market within a series.
+        
+        Args:
+            series_ticker: Series ticker
+            ticker: Market ticker
+            start_ts: Start timestamp (Unix)
+            end_ts: End timestamp (Unix)
+            period_interval: Period in minutes (1, 60, or 1440)
+        
+        Returns:
+            Candlestick data
+        """
+        params = {
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "period_interval": period_interval
+        }
+        return await self._make_authenticated_request(
+            "GET",
+            f"/trade-api/v2/series/{series_ticker}/markets/{ticker}/candlesticks",
+            params=params, require_auth=False
+        )
+    
+    # =========================================================================
+    # ACCOUNT ENDPOINTS - For account management
+    # =========================================================================
+    
+    async def get_account_limits(self) -> Dict[str, Any]:
+        """
+        Get API tier limits for the authenticated user.
+        
+        Returns:
+            Account API limits
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/account/limits"
+        )
+    
+    async def get_exchange_user_data_timestamp(self) -> Dict[str, Any]:
+        """
+        Get approximate timestamp when user data was last validated.
+        
+        Applies to: GetBalance, GetOrder(s), GetFills, GetPositions
+        
+        Returns:
+            Timestamp data
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/exchange/user_data_timestamp"
+        )
+    
+    # =========================================================================
+    # PORTFOLIO SUMMARY ENDPOINTS
+    # =========================================================================
+    
+    async def get_total_resting_order_value(self) -> Dict[str, Any]:
+        """
+        Get total value of resting orders in cents.
+        
+        Note: Only intended for FCM members.
+        
+        Returns:
+            Total resting order value
+        """
+        return await self._make_authenticated_request(
+            "GET", "/trade-api/v2/portfolio/summary/total_resting_order_value"
+        )
+    
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
